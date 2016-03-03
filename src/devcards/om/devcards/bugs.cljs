@@ -425,6 +425,215 @@
       (om/add-root! om-628-reconciler om-628-Parent node))))
 
 
+(def child-join-via-params-state
+  {:route/name :route-list/books
+   :route/params {}
+   :route/data {:list/books [[:books/by-id "x"]]}
+   :books/by-id {"x" {:id "x" :book/author {:name "X"}}
+                 "y" {:id "y" :book/author {:name "Y"}}}
+   })
+
+(defmulti child-join-via-params-read om/dispatch)
+(defmulti child-join-via-params-mutate om/dispatch)
+
+(def child-join-via-params-parser
+  (om/parser
+    {:read child-join-via-params-read
+     :mutate child-join-via-params-mutate}))
+
+
+(def child-join-via-params-reconciler
+  (om/reconciler
+    {:state child-join-via-params-state
+     :parser child-join-via-params-parser
+     :send (fn [queries cb]
+             (let [{:keys [remote]} queries]
+               ; REMOTE IS NEVER FIRED FOR THE SECOND MUTATION
+               (println "remote called for child-join-via-params")
+               (cljs.pprint/pprint remote)
+               ; simulate remote data coming back for first
+               ; request
+               (if (some-> remote first :route/data first :list/books)
+                 ; IF YOU COMMENT OUT THIS CALLBACK, THINGS WORK.
+                 ; IF YOU LEAVE THIS CALLBACK IN, IT DOES NOT WORK.
+                 (cb
+                  {:route/data
+                   {:list/books
+                    [{:id "w" :book/author {:name "W"}}
+                     {:id "x" :book/author {:name "X"}}
+                     {:id "y" :book/author {:name "Y"}}
+                     {:id "z" :book/author {:name "Z"}}
+                     ]
+                    }
+                   }
+                   remote)
+                 nil
+               )
+               (if (some-> remote first :route/data ffirst :lookup/book)
+                 ; IF YOU COMMENT OUT THIS CALLBACK, THINGS WORK.
+                 ; IF YOU LEAVE THIS CALLBACK IN, IT DOES NOT WORK.
+                 (cb
+                   {:route/data
+                     {:lookup/book
+                       {:id "y"
+                        :title "EXPECTED CORRECT BEHAVIOR"
+                        :book/author {:name "Y"}}
+                      }
+                    }
+                    remote)
+                 nil
+               )
+               ))}))
+
+
+(defmethod child-join-via-params-read :default
+  [{:keys [state book]} k _]
+  (if book
+    {:value (get book k)}
+    {:value (get @state k)}))
+
+(defmethod child-join-via-params-read :route/data
+  [{:keys [state query target ast] :as env} k _]
+  (let [x (child-join-via-params-parser env query target)]
+    {:value x
+     :remote (assoc ast
+               :query x
+               :type :join)}))
+
+(defmethod child-join-via-params-read :list/books
+  [{:keys [state query ast] :as env} k _]
+  (let [st @state
+        book-idents (get-in st [:route/data k])]
+    {:value (mapv
+              #(child-join-via-params-parser
+                 (assoc env :book (get-in st %))
+                 query)
+             book-idents)
+     :remote (assoc ast :query-root true)}))
+
+(defmethod child-join-via-params-read :lookup/book
+  [{:keys [state query ast] :as env} k _]
+  (let [st @state
+        route-params (:route/params st)
+        book-id (:id route-params)]
+    {:value (get-in st [:books/by-id book-id])
+     :remote (-> ast
+                 (assoc
+                   :query-root true
+                   :params route-params))}))
+
+
+(defui ChildJoinViaParamsBook
+  static om/Ident
+  (ident [this {:keys [id]}]
+    [:books/by-id id])
+  static om/IQuery
+  (query [this]
+    [:id {:book/author [:name]}])
+  Object
+  (render [this]
+    (let [{:keys [id book/author]} (om/props this)]
+      (dom/li #js {:key (author :name)}
+              (author :name)))))
+(def child-join-via-params-book (om/factory ChildJoinViaParamsBook))
+
+(defui ChildJoinViaParamsList
+  static om/IQuery
+  (query [this]
+    [{:list/books (om/get-query ChildJoinViaParamsBook)}])
+  Object
+  (render [this]
+    (let [{:keys [list/books]} (om/props this)]
+      (dom/ul nil (map child-join-via-params-book
+                       books)))))
+
+(def child-join-via-params-list (om/factory ChildJoinViaParamsList))
+
+(defui ChildJoinViaParamsBookWithTitle
+  static om/Ident
+  (ident [this {:keys [id]}]
+    [:books/by-id id])
+  static om/IQuery
+  (query [this]
+    [:id :title {:book/author [:name]}])
+  Object
+  (render [this]
+    (let [{:keys [id title book/author]} (om/props this)]
+      (dom/div nil
+               (dom/div nil (str "Author " (:name author)))
+               (dom/div nil (str "Title" (if title title "UNEXPECTED BEHAVIOR")))))))
+
+(def child-join-via-params-book-with-title (om/factory ChildJoinViaParamsBookWithTitle))
+
+(defui ChildJoinViaParamsLookup
+  static om/IQuery
+  (query [this]
+    [{:lookup/book (om/get-query ChildJoinViaParamsBookWithTitle)}])
+  Object
+  (render [this]
+    (let [{:keys [lookup/book]} (om/props this)]
+      (child-join-via-params-book-with-title book))))
+(def child-join-via-params-lookup (om/factory ChildJoinViaParamsLookup))
+
+(defmethod child-join-via-params-mutate 'change/route
+  [{:keys [state]} _ {:keys [route/name route/params]}]
+  {:value {:keys [:route :data]}
+   :action
+     (fn []
+       (let [component (case name
+                          :route-list/books ChildJoinViaParamsList
+                          :route-lookup/book ChildJoinViaParamsLookup
+                          nil)
+             query (om/get-query component)
+             root (om/app-root child-join-via-params-reconciler)]
+         (swap! state assoc :route/name name :route/params params)
+         (om/set-query! root {:params {:query query}})))})
+
+
+(defui ChildJoinViaParamsRoot
+  static om/IQueryParams
+  (params [this]
+    {:query []})
+  static om/IQuery
+  (query [this]
+   '[:route/name :route/params {:route/data ?query}])
+  Object
+  (render [this]
+    (let [{:keys [route/name route/data]} (om/props this)
+          component (case name
+                      :route-list/books child-join-via-params-list
+                      :route-lookup/book child-join-via-params-lookup
+                      nil)]
+      (dom/div nil
+        (dom/button
+          #js {:onClick
+               (fn []
+                 (om/transact!
+                   (om/app-root child-join-via-params-reconciler)
+                   '[(change/route {:route/name :route-lookup/book :route/params {:id "y"}})]))}
+          "Change Route")
+        (component data)))))
+
+(defcard child-join-via-params
+  "URL routing scenario bug caused by the sequence
+
+  1. set-query on the app-root
+  2. Receive and render data from remote
+  3. set-query again on the app-root that causes a different child component to render
+  4. BUG The root query resulting from 3 is never sent up to the remote
+  
+  Click the Button 'Change Route'. You should expect to see a book title 
+  \"EXPECTED CORRECT BEHAVIOR\" but instead a title is never fetched from
+  remote so we fall back to the default book title \"UNEXPECTED BEHAVIOR\"
+  which indicates the presence of a bug."
+  (dom-node
+    (fn [_ node]
+      (om/add-root! child-join-via-params-reconciler ChildJoinViaParamsRoot node)
+      (om/transact!
+        (om/app-root child-join-via-params-reconciler)
+        '[(change/route {:route/name :route-list/books})]))))
+
+
 (comment
 
   (require '[cljs.pprint :as pprint])
