@@ -1077,6 +1077,8 @@
                                 path'          (conj path prop)
                                 rendered-path' (into [] (remove (set union-keys) path'))
                                 cascade-query? (and (= (count (get dp->cs rendered-path')) 1)
+                                                 (= (-> query' meta :component)
+                                                    (-> rendered-path' dp->cs first type))
                                                  (not (map? query')))
                                 query''        (if cascade-query?
                                                  (get-query (first (get dp->cs rendered-path')))
