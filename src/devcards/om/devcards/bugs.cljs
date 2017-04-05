@@ -1101,6 +1101,9 @@
 (defui om-862-Root
   static om/IQuery
   (query [this]
+    [:count])
+  Object
+  (render [this]
     (let [props (om/props this)]
       (dom/div nil
                (dom/div
