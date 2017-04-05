@@ -1057,6 +1057,7 @@
   (render [this]
     (let [props (om/props this)]
       (dom/div nil
+               (dom/div nil (:count props))
                (dom/p nil (str "Root query: "
                                (om/get-query this)))
                (om-860-child (:child1 props))))))
@@ -1100,23 +1101,22 @@
 (defui om-862-Root
   static om/IQuery
   (query [this]
-    [:count])
-  (dom/div nil (:count props))
-               (dom/div
-                 nil
-                 "Clicking first on <Should increment by 2> should not
-                 prevent <Should increment by 1> from scheduling a
-                 reconcile! Try clicking first on <Should increment by 2> and
-                 then try clicking on <Should increment by 1>.")
-               (dom/button
-                 #js {:onClick #(om/transact!
-                                  this '[(count/inc-by-each-remote)])}
-                 "Should increment by 2")
-               (dom/button
-                 #js {:onClick #(om/transact!
-                                  this '[(count/inc-only-client)])}
-                 "Should increment by 1")
-               (dom/div nil (:count props))))))
+    (dom/div nil
+             (dom/div
+               nil
+               "Clicking first on <Should increment by 2> should not
+               prevent <Should increment by 1> from scheduling a
+               reconcile! Try clicking first on <Should increment by 2> and
+               then try clicking on <Should increment by 1>.")
+             (dom/button
+               #js {:onClick #(om/transact!
+                                this '[(count/inc-by-each-remote)])}
+               "Should increment by 2")
+             (dom/button
+               #js {:onClick #(om/transact!
+                                this '[(count/inc-only-client)])}
+               "Should increment by 1")
+             (dom/div nil (:count props)))))
 ; Override om/*raf* to force the race condition that causes the abberant
 ; om-862 behavior
 (set! om/*raf* (fn [f]
