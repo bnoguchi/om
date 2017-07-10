@@ -608,7 +608,9 @@
     query
     (let [[k & ks] path]
       (letfn [(match [x]
-                (= k (util/join-key x)))
+                (or
+                  (= k (util/join-key x))
+                  (= [k '_] (util/join-key x))))
               (value [x]
                 (focused-join x ks query union-expr))]
         (if (map? query) ;; UNION
