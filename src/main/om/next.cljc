@@ -2240,11 +2240,21 @@
       (if (query-root? join)
         (conj result-roots [join path])
         (let [joinvalue (util/join-value join)]
-          (if (vector? joinvalue)
+          (cond
+
+            (vector? joinvalue)
             (mapcat
              #(move-roots % result-roots
                           (conj path (util/join-key join)))
              joinvalue)
+
+            (map? joinvalue)
+            (mapcat
+              #(move-roots (conj {} %) result-roots
+                           (conj path (util/join-key join)))
+              joinvalue)
+
+            :else
             result-roots)))
       result-roots)))
 
