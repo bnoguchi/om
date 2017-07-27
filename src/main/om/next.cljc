@@ -2519,7 +2519,7 @@
         ((:render st))
         (let [cs (transduce
                    (map #(p/key->components (:indexer config) %))
-                   #(into %1 %2) #{} q)
+                   (completing into) #{} q)
               {:keys [ui->props]} config
               env (to-env config)
               root (:root @state)]
